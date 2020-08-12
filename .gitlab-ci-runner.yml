@@ -1,0 +1,53 @@
+install_runner:
+  stage: extend
+  tags:
+    - infra
+  script:
+    - |
+      # Setting up...
+      . ./common/commonsetup.sh
+      if [ "${DRYRUN}" == "yes" ] ; then echo "Dry run of ${CI_JOB_NAME} only. Nothing Done." ; exit 0 ; fi
+    - |
+      # Install Runner 
+      echo Get TKC Kubeconfig
+      ${KUBECMD} -n ${KUBE_NAMESPACE} get secret ${TCL_NAME}-kubeconfig -o jsonpath='{.data.value}'  | base64 --decode > ./${TCL_NAME}.kubeconfig
+      TKCKUBECMD="kubectl --kubeconfig=./${TCL_NAME}.kubeconfig --insecure-skip-tls-verify "
+      echo Apply ../contour-ingress/psp-rolebinding.yaml
+      ${TKCKUBECMD} apply -f ../contour-ingress/psp-rolebinding.yaml
+      echo create namespace 
+      ${TKCKUBECMD} apply -f ../runner/gitlabrunner-ns.yaml
+      echo Give default SA full access to runner namespace
+      ${TKCKUBECMD} apply -f ../runner/gitlab-runner-ns-fullaccess-role.yaml
+      echo Create CA cert secret for Gitlab instance
+      ${TKCKUBECMD} --namespace gitlabrunner create secret generic gitlabrunner-sec --from-file=../.gitlab.me.com.crt || true
+    - |
+      # Install using Helm  
+      echo Installing Runner into ${TCL_NAME} in namespace ${KUBE_NAMESPACE}
+      helm repo add gitlab https://charts.gitlab.io
+      helm upgrade --install  --kubeconfig ./${TCL_NAME}.kubeconfig --namespace gitlabrunner gitlab-runner \
+      --set gitlabUrl="${CI_SERVER_URL}" --set runnerRegistrationToken="${RUNNER_TOKEN}" \
+      --set certsSecretName=gitlabrunner-sec --set rbac.clusterWideAccess=true gitlab/gitlab-runner
+      ${TKCKUBECMD}  rollout status --namespace gitlabrunner deployment.apps/gitlab-runner-gitlab-runner
+    - echo Runner installed
+    - |
+      # get Cluster info
+      echo Use the info below to add this cluster to Gitlab. See https://docs.gitlab.com/ee/user/project/clusters/add_remove_clusters.html#add-existing-cluster
+      echo API URL to add kubernetes cluster to Gitlab:
+      ${TKCKUBECMD} cluster-info | grep 'Kubernetes master' | awk '/http/ {print $NF}'
+    - |
+      # create admin account and get token 
+      ${TKCKUBECMD} apply -f ../runner/gitlab-admin-service-account.yaml
+      echo Token to add kubernetes cluster to Gitlab:
+      ${TKCKUBECMD} -n kube-system describe secret $(${TKCKUBECMD} -n kube-system get secret | grep gitlab-admin | awk '{print $1}')
+    - |
+      # get certificate from default SA
+      echo CA Certificate to add kubernetes cluster to Gitlab:
+      ${TKCKUBECMD} get secret $(${TKCKUBECMD} get secret | grep default | awk '{print $1}') -o jsonpath="{['data']['ca\.crt']}" | base64 --decode
+  when: manual
+  only:
+    refs:
+      - master
+    changes:
+      - tkgclusters/tkg-cluster.yaml
+  
+  

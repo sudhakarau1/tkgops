@@ -1,0 +1,102 @@
+.common_pre: &common_pre_script
+  - |
+    # Setting up...
+    . ./common/commonsetup.sh
+    if [ "${DRYRUN}" == "yes" ] ; then echo "Dry run of ${CI_JOB_NAME} only. Nothing Done." ; exit 0 ; fi
+
+variables:
+  KUBECMD: "kubectl  --kubeconfig=./sc.kubeconfig --insecure-skip-tls-verify "
+
+stages:
+  - create
+  - extend
+  - change
+   
+deploy:
+  stage: create
+  tags:
+    - infra
+  script:
+    - *common_pre_script
+    - | 
+      #Creating cluster ${TCL_NAME} in namespace ${KUBE_NAMESPACE}. Please wait...
+      echo Creating cluster ${TCL_NAME} in namespace ${KUBE_NAMESPACE}. Please wait...
+      ${KUBECMD} -n ${KUBE_NAMESPACE} apply -f tkg-cluster.yaml
+      while [ "$(${KUBECMD} get -n ${KUBE_NAMESPACE} tkc/${TCL_NAME} -o template  --template={{.status.phase}})" != "running" ]; do sleep 30 ; done
+      echo "Cluster provisioned. Waiting for machines..."
+      MACHINE_STATUS="${KUBECMD} get -n ${KUBE_NAMESPACE} machine -l cluster.x-k8s.io/cluster-name=${TCL_NAME} -o jsonpath='{.items[*].status.phase}'"
+      while [[ "$(${MACHINE_STATUS})"  == *"provision"* || "$(${MACHINE_STATUS})"  == *"pending"* ]]; do sleep 60 ; done
+      echo "All Done!"
+    - |
+      echo Download the Kubernetes CLI Tools from https://192.168.2.1/ and use
+      echo \`\`\`
+      echo kubectl vsphere login --insecure-skip-tls-verify --vsphere-username yourusername --server https://${SC_HOST}  --tanzu-kubernetes-cluster-name ${TCL_NAME} --tanzu-kubernetes-cluster-namespace ${KUBE_NAMESPACE}
+      echo \`\`\`
+      echo to access the cluster. Enjoy.
+  only:
+    refs:
+      - master
+    changes:
+      - tkgclusters/tkg-cluster.yaml
+
+include: 
+  - '.gitlab-ci-postconfig_nodes.yml'
+  - '.gitlab-ci-runner.yml'
+  - '.gitlab-ci-contour.yml'
+  - '.gitlab-ci-tmc.yml'
+  - '.gitlab-ci-velero.yml'
+
+remove_cluster:
+  stage: change
+  tags:
+    - infra
+  script:
+    - *common_pre_script
+    - | 
+      # Deleting cluster ${TCL_NAME} in namespace ${KUBE_NAMESPACE} 
+      echo Deleting cluster ${TCL_NAME} in namespace ${KUBE_NAMESPACE}  
+      ${KUBECMD} -n ${KUBE_NAMESPACE} delete -f  tkg-cluster.yaml 
+  when: manual
+  only:
+    refs:
+      - master
+    changes:
+      - tkgclusters/tkg-cluster.yaml
+  
+upgrade_cluster:
+  stage: change
+  tags:
+    - infra
+  script:
+    - *common_pre_script
+    - | 
+      # Upgrading cluster ${TCL_NAME} in namespace ${KUBE_NAMESPACE}
+      # doesn't work TCL_NEW_VER=$( cat  tkg-cluster.yaml | yq r - 'spec.distribution.version')
+      # so proivde TCL_NEW_VER manually
+      if [ "${TCL_VER}" == "${TCL_NEW_VER}" ] ; then echo "No upgrade is required" ; exit 0 ; fi
+      echo Upgrading cluster ${TCL_NAME} in namespace ${KUBE_NAMESPACE}  from ${TCL_VER} to version ${TCL_NEW_VER}. Please wait...
+    - |
+      cat > patch.txt << EOF
+      spec:
+        distribution:
+          fullVersion: null    # NOTE: Must set to null when updating just the version field
+          version: ${TCL_NEW_VER}
+      EOF
+    - PATCH=$(cat patch.txt)
+    - echo "$PATCH"
+    - ${KUBECMD} -n ${KUBE_NAMESPACE} patch --type=merge tanzukubernetescluster  ${TCL_NAME} --patch "$PATCH"
+    - |
+      echo "Cluster Updated. Waiting for machines..."
+      sleep 60
+      while [ "$(${KUBECMD} get -n ${KUBE_NAMESPACE} tkc/${TCL_NAME} -o template  --template={{.status.phase}})" != "running" ]; do sleep 30 ; done
+      MACHINE_STATUS="${KUBECMD} get -n ${KUBE_NAMESPACE} machine -l cluster.x-k8s.io/cluster-name=${TCL_NAME} -o jsonpath='{.items[*].status.phase}'"
+      while [[ "$(${MACHINE_STATUS})"  == *"provision"* || "$(${MACHINE_STATUS})"  == *"pending"* || "$(${MACHINE_STATUS})"  == *"deleting"* ]]; do sleep 60 ; done
+      echo "All Done!"
+  when: manual
+  only:
+    refs:
+      - master
+    changes:
+      - tkgclusters/tkg-cluster.yaml
+
+

@@ -1,0 +1,30 @@
+post_configure_nodes:
+    stage: extend
+    tags:
+      - infra
+    script:
+      - |
+        # Setting up...
+        . ./common/commonsetup.sh
+        if [ "${DRYRUN}" == "yes" ] ; then echo "Dry run of ${CI_JOB_NAME} only. Nothing Done." ; exit 0 ; fi
+      - |
+        # Get TCL kubeconfig and nodenames
+        NODENAMES=$(${KUBECMD} -n ${KUBE_NAMESPACE} get virtualmachine -l "capw.vmware.com/cluster.name in ($TCL_NAME),capw.vmware.com/cluster.role in (node)" -o jsonpath='{.items[*].metadata.name}')
+        ${KUBECMD} -n ${KUBE_NAMESPACE} get secret ${TCL_NAME}-kubeconfig -o jsonpath='{.data.value}'  | base64 --decode > ./${TCL_NAME}.kubeconfig
+        TKCKUBECONFIG=`pwd`/${TCL_NAME}.kubeconfig
+        echo Configuring ${TCL_NAME} nodes $NODENAMES in namespace ${KUBE_NAMESPACE} with $TKCKUBECONFIG
+      - |
+        # Configure 
+        for x in $NODENAMES; do
+          echo Executing on node $x with 
+          . ../tkcnodeconfigure/nsenter-node.sh $x
+        done
+      - echo Done
+    when: manual
+    only:
+      refs:
+        - master
+      changes:
+        - tkgclusters/tkg-cluster.yaml
+  
+  

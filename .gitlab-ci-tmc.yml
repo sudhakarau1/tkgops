@@ -1,0 +1,26 @@
+connect_tmc:
+  stage: extend
+  tags:
+    - infra
+  script:
+    - |
+      # Setting up...
+      . ./common/commonsetup.sh
+      if [ "${DRYRUN}" == "yes" ] ; then echo "Dry run of ${CI_JOB_NAME} only. Nothing Done." ; exit 0 ; fi
+    - |
+      # Get TKC kubeconfig
+      ${KUBECMD} -n ${KUBE_NAMESPACE} get secret ${TCL_NAME}-kubeconfig -o jsonpath='{.data.value}'  | base64 --decode > ./${TCL_NAME}.kubeconfig
+      TKCKUBECMD="kubectl --kubeconfig=./${TCL_NAME}.kubeconfig --insecure-skip-tls-verify "
+    - |
+      # Attach Cluster to TMC 
+      echo Attaching ${TCL_NAME} in namespace ${KUBE_NAMESPACE} to TMC
+      tmc login --no-configure --name ${TCL_NAME}-${TMC_ORG}
+      tmc cluster attach -g "${TMC_GRP:-default}" -n ${TCL_NAME} -k ./${TCL_NAME}.kubeconfig
+      tmc system context delete ${TCL_NAME}-${TMC_ORG}
+      echo Done.
+  when: manual
+  only:
+    refs:
+      - master
+    changes:
+      - tkgclusters/tkg-cluster.yaml

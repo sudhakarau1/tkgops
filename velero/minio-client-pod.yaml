@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: minioclient
+  labels:
+    app: minioclient
+spec:
+  containers:
+  - name: minio
+    image: bitnami/minio-client:latest
+    imagePullPolicy: IfNotPresent
+    command: ["/cmds/cmds-minio.sh"]
+    volumeMounts:
+      - name: cmds-minio
+        mountPath: "/cmds"
+  volumes:
+    - name: cmds-minio
+      configMap:
+        name: cmds-minio
+        defaultMode: 0745
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cmds-minio
+data:
+  cmds-minio.sh: |
+    #!/bin/sh
+    mc config host add minio-v7k8s http://192.168.2.6:9000 minio minio123
+    mc mb -p minio-v7k8s/velero
+    sleep 120

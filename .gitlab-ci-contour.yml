@@ -1,0 +1,27 @@
+install_contour:
+  stage: extend
+  tags:
+    - infra
+  script:
+    - |
+      # Setting up...
+      . ./common/commonsetup.sh
+      if [ "${DRYRUN}" == "yes" ] ; then echo "Dry run of ${CI_JOB_NAME} only. Nothing Done." ; exit 0 ; fi
+    - |
+      # Get TKC kubeconfig
+      ${KUBECMD} -n ${KUBE_NAMESPACE} get secret ${TCL_NAME}-kubeconfig -o jsonpath='{.data.value}'  | base64 --decode > ./${TCL_NAME}.kubeconfig
+      TKCKUBECMD="kubectl --kubeconfig=./${TCL_NAME}.kubeconfig --insecure-skip-tls-verify "
+    - |
+      # Install Contour  
+      echo Installing Contour into ${TCL_NAME} in namespace ${KUBE_NAMESPACE}
+      ${TKCKUBECMD} apply -f  ../contour-ingress/psp-rolebinding.yaml
+      ${TKCKUBECMD} apply -f  ../contour-ingress/install-contour.yaml
+      ${TKCKUBECMD}  rollout status   -n projectcontour DaemonSet/envoy
+      echo Ingress IP address is $(${TKCKUBECMD} get svc/envoy -n projectcontour -o yaml -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  when: manual
+  only:
+    refs:
+      - master
+    changes:
+      - tkgclusters/tkg-cluster.yaml
+

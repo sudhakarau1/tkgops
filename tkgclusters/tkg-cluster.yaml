@@ -1,0 +1,26 @@
+apiVersion: run.tanzu.vmware.com/v1alpha1
+kind: TanzuKubernetesCluster
+metadata:
+  namespace: services
+  name: test01
+spec:
+  distribution:
+    fullVersion: null
+    version: v1.17.8
+  topology:
+    controlPlane:
+      class: best-effort-xsmall
+      count: 1
+      storageClass: k8s-gold-storage-policy
+    workers:
+      class: best-effort-xsmall
+      count: 2
+      storageClass: k8s-gold-storage-policy
+  settings:
+    network:
+      cni:
+        name: calico
+      services:
+        cidrBlocks: ["198.51.100.0/12"]
+      pods:
+        cidrBlocks: ["192.0.2.0/16"]
