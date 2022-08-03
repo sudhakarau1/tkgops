@@ -1,6 +1,6 @@
-# Gitlab CI for Tanzu Kubernetes clusters on VSphere 7 with Kubernetes
+# Gitlab CI for VMware Tanzu Kubernetes clusters on VSphere 7 with Kubernetes
 
-Show using Gitlab CI to CRUD Tanzu Kubernetes clusters on vSphere with Kubernetes. Kept relatively simple using nothing fancy: `Bash , ssh, curl. Helm, Kubectl, jq/yq, velero, TMC cli and nsenter` so the job scripts can be used elsewhere.
+Show using Gitlab CI to CRUD VMware Tanzu Kubernetes clusters on vSphere with Kubernetes. Kept relatively simple using nothing fancy: `Bash , ssh, curl. Helm, Kubectl, jq/yq, velero, TMC cli and nsenter` so the job scripts can be used elsewhere.
 
 ## The pipeline
 ![tkgopspipeline](screenshots/tkgops-pipeline.PNG)
